@@ -95,16 +95,33 @@ contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGua
         emit Unstaked(msg.sender, token, originalAmountToWithdraw);
     }
 
+    // Revised redeemForTokens function for efficiency and scalability
     function redeemForTokens(uint256 sTokenAmount) external onlyRole(MANAGER_ROLE) nonReentrant {
         require(sTokenAmount > 0, "Invalid sToken amount");
+        require(totalStaked >= sTokenAmount, "Insufficient staked amount in contract");
 
-        // This assumes the contract itself holds an equivalent value of sTokens to the amount being redeemed
-        require(balanceOf(address(this)) >= sTokenAmount, "Insufficient sTokens in contract");
-        
-        _burn(address(this), sTokenAmount);
-        dddToken.mint(address(this), sTokenAmount);
+        uint256 remainingSTokenAmount = sTokenAmount;
+        for (address staker in stakingBalances) {
+            if (remainingSTokenAmount == 0) break;
 
-        emit Redeemed(sTokenAmount, 0, sTokenAmount);
+            Stake storage userStake = stakingBalances[staker];
+            if (userStake.totalStakeValue > 0) {
+                uint256 redeemableAmount = min(remainingSTokenAmount, userStake.totalStakeValue);
+                userStake.totalStakeValue -= redeemableAmount;
+                remainingSTokenAmount -= redeemableAmount;
+
+                uint256 rewardAmount = calculateReward(userStake.originalAmount, userStake.lockPeriod, userStake.lastClaimTime, block.timestamp);
+                dddToken.mint(msg.sender, rewardAmount);
+
+                if (userStake.totalStakeValue == 0) {
+                    totalStaked -= userStake.originalAmount;
+                    delete stakingBalances[staker];
+                }
+            }
+        }
+
+        require(remainingSTokenAmount == 0, "Redemption amount exceeds available staked tokens");
+        emit Redeemed(sTokenAmount, totalStaked, sTokenAmount);
     }
 
     function batchUnstake(address[] calldata users, address token, uint256[] calldata sTokenAmounts) external onlyRole(MANAGER_ROLE) nonReentrant {
