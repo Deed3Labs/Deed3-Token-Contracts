@@ -3,16 +3,18 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 interface ICustomToken {
     function mint(address to, uint256 amount) external;
 }
 
-contract LiquidStakingContract is ERC20Upgradeable, ReentrancyGuardUpgradeable, OwnableUpgradeable {
+contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGuardUpgradeable, AccessControlUpgradeable {
     ICustomToken public dddToken;
     mapping(address => bool) public whitelistedTokens;
-    
+    bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
+
     struct Stake {
         uint256 amount;
         uint256 startTime;
@@ -25,19 +27,22 @@ contract LiquidStakingContract is ERC20Upgradeable, ReentrancyGuardUpgradeable, 
     event Unstaked(address indexed user, address token, uint256 amount);
     event RewardClaimed(address indexed user, uint256 reward);
 
-    function initialize(address _dddTokenAddress) public initializer {
+    function initialize(address _dddTokenAddress, address multisigAddress) public initializer {
         __ERC20_init("StakingToken", "sDDD");
         __ReentrancyGuard_init();
-        __Ownable_init();
+        __AccessControl_init();
+
+        _setupRole(DEFAULT_ADMIN_ROLE, multisigAddress);
+        _setupRole(MANAGER_ROLE, multisigAddress);
 
         dddToken = ICustomToken(_dddTokenAddress);
     }
 
-    function addTokenToWhitelist(address token) external onlyOwner {
+    function addTokenToWhitelist(address token) external onlyRole(MANAGER_ROLE) {
         whitelistedTokens[token] = true;
     }
 
-    function removeTokenFromWhitelist(address token) external onlyOwner {
+    function removeTokenFromWhitelist(address token) external onlyRole(MANAGER_ROLE) {
         whitelistedTokens[token] = false;
     }
 
@@ -52,7 +57,6 @@ contract LiquidStakingContract is ERC20Upgradeable, ReentrancyGuardUpgradeable, 
         totalStaked += amount;
 
         _mint(msg.sender, amount);  // Mint sTokens to represent the staked amount
-
         emit Staked(msg.sender, token, amount, lockPeriod);
     }
 
@@ -76,6 +80,22 @@ contract LiquidStakingContract is ERC20Upgradeable, ReentrancyGuardUpgradeable, 
         delete stakingBalances[msg.sender];
     }
 
+    function redeemForTokens(address user, address token) external onlyRole(MANAGER_ROLE) nonReentrant {
+        Stake memory userStake = stakingBalances[user];
+        require(userStake.amount > 0, "No tokens staked");
+
+        uint256 reward = calculateReward(user);
+        totalStaked -= userStake.amount;
+
+        _burn(address(this), userStake.amount); // Burn sTokens
+        dddToken.mint(user, reward);
+
+        ERC20Upgradeable(token).transfer(user, userStake.amount + reward);
+        emit RewardClaimed(user, reward);
+
+        delete stakingBalances[user];
+    }
+
     function calculateReward(address staker) internal view returns (uint256) {
         Stake memory userStake = stakingBalances[staker];
         uint256 rewardRate = getRewardRate(userStake.lockPeriod);
@@ -92,7 +112,7 @@ contract LiquidStakingContract is ERC20Upgradeable, ReentrancyGuardUpgradeable, 
         return 125;  // For 60 months
     }
 
-    function batchUnstake(address[] calldata users, address token) external onlyOwner nonReentrant {
+    function batchUnstake(address[] calldata users, address token) external onlyRole(MANAGER_ROLE) nonReentrant {
         for (uint i = 0; i < users.length; i++) {
             Stake memory userStake = stakingBalances[users[i]];
             if(userStake.amount > 0 && block.timestamp >= userStake.startTime + (userStake.lockPeriod * 30 days)) {
