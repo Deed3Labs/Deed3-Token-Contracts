@@ -19,6 +19,7 @@ contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGua
         uint256 amount;
         uint256 startTime;
         uint256 lockPeriod;
+        uint256 lastClaimTime;
     }
     mapping(address => Stake) public stakingBalances;
     uint256 public totalStaked;
@@ -53,11 +54,22 @@ contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGua
 
         ERC20Upgradeable(token).transferFrom(msg.sender, address(this), amount);
 
-        stakingBalances[msg.sender] = Stake(amount, block.timestamp, lockPeriod);
+        stakingBalances[msg.sender] = Stake(amount, block.timestamp, lockPeriod, block.timestamp);
         totalStaked += amount;
 
         _mint(msg.sender, amount);  // Mint sTokens to represent the staked amount
         emit Staked(msg.sender, token, amount, lockPeriod);
+    }
+
+    function claimRewards() external nonReentrant {
+        Stake storage userStake = stakingBalances[msg.sender];
+        require(userStake.amount > 0, "No tokens staked");
+
+        uint256 reward = calculateReward(msg.sender);
+        userStake.lastClaimTime = block.timestamp;
+
+        dddToken.mint(msg.sender, reward);
+        emit RewardClaimed(msg.sender, reward);
     }
 
     function unstake(address token) external nonReentrant {
@@ -68,38 +80,20 @@ contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGua
         uint256 amount = userStake.amount;
         totalStaked -= amount;
 
-        uint256 reward = calculateReward(msg.sender);
-        dddToken.mint(msg.sender, reward);
+        claimRewards();  // Automatically claim any outstanding rewards
 
         _burn(msg.sender, amount);  // Burn sTokens representing the unstaked amount
-        ERC20Upgradeable(token).transfer(msg.sender, amount + reward);
+        ERC20Upgradeable(token).transfer(msg.sender, amount);
         
-        emit RewardClaimed(msg.sender, reward);
         emit Unstaked(msg.sender, token, amount);
 
         delete stakingBalances[msg.sender];
     }
 
-    function redeemForTokens(address user, address token) external onlyRole(MANAGER_ROLE) nonReentrant {
-        Stake memory userStake = stakingBalances[user];
-        require(userStake.amount > 0, "No tokens staked");
-
-        uint256 reward = calculateReward(user);
-        totalStaked -= userStake.amount;
-
-        _burn(address(this), userStake.amount); // Burn sTokens
-        dddToken.mint(user, reward);
-
-        ERC20Upgradeable(token).transfer(user, userStake.amount + reward);
-        emit RewardClaimed(user, reward);
-
-        delete stakingBalances[user];
-    }
-
     function calculateReward(address staker) internal view returns (uint256) {
         Stake memory userStake = stakingBalances[staker];
         uint256 rewardRate = getRewardRate(userStake.lockPeriod);
-        uint256 timeStaked = block.timestamp - userStake.startTime;
+        uint256 timeStaked = block.timestamp - userStake.lastClaimTime;
         uint256 reward = (userStake.amount * rewardRate * timeStaked) / (365 days) / 100;
         return reward;
     }
@@ -132,4 +126,5 @@ contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGua
             }
         }
     }
+
 }
