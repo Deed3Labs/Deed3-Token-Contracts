@@ -95,7 +95,6 @@ contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGua
         emit Unstaked(msg.sender, token, originalAmountToWithdraw);
     }
 
-    // Revised redeemForTokens function for efficiency and scalability
     function redeemForTokens(uint256 sTokenAmount) external onlyRole(MANAGER_ROLE) nonReentrant {
         require(sTokenAmount > 0, "Invalid sToken amount");
         require(totalStaked >= sTokenAmount, "Insufficient staked amount in contract");
