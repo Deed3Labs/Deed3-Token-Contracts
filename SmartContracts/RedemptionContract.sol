@@ -1,4 +1,4 @@
- // SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
@@ -16,6 +16,8 @@ contract RedemptionContract is Initializable, AccessControlUpgradeable {
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
 
     event Redeemed(address indexed user, uint256 sTokenAmount, uint256 redeemedAmount);
+    event FundsAdded(address indexed from, uint256 amount);
+    event FundsWithdrawn(address indexed to, uint256 amount);
 
     function initialize(address _sToken, address _stakingContract, address multisigAddress) public initializer {
         __AccessControl_init();
@@ -36,6 +38,7 @@ contract RedemptionContract is Initializable, AccessControlUpgradeable {
 
         uint256 redeemableAmount = (totalStakedFunds * sTokenAmount) / totalSTokens;
         require(redeemableAmount > 0, "Redeemable amount is 0");
+        require(redeemableAmount <= address(this).balance, "Insufficient funds in contract");
 
         sToken.transferFrom(msg.sender, address(this), sTokenAmount);
         payable(msg.sender).transfer(redeemableAmount);
@@ -43,11 +46,24 @@ contract RedemptionContract is Initializable, AccessControlUpgradeable {
         emit Redeemed(msg.sender, sTokenAmount, redeemableAmount);
     }
 
-    function withdrawFunds() external onlyRole(MANAGER_ROLE) {
-        uint256 balance = address(this).balance;
-        require(balance > 0, "No funds to withdraw");
-        payable(msg.sender).transfer(balance);
+    function withdrawFunds(address to, uint256 amount) external onlyRole(MANAGER_ROLE) {
+        require(amount > 0, "Cannot withdraw 0");
+        require(amount <= address(this).balance, "Insufficient funds in contract");
+
+        payable(to).transfer(amount);
+        emit FundsWithdrawn(to, amount);
     }
 
-    // Additional functions like adding funds, managing roles, etc., can be implemented here
+    function addFunds() external payable onlyRole(MANAGER_ROLE) {
+        emit FundsAdded(msg.sender, msg.value);
+    }
+
+    function grantManagerRole(address newManager) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        grantRole(MANAGER_ROLE, newManager);
+    }
+
+    function revokeManagerRole(address manager) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        revokeRole(MANAGER_ROLE, manager);
+    }
+
 }
