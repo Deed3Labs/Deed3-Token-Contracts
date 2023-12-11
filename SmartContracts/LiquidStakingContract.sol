@@ -20,14 +20,15 @@ contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGua
         uint256 startTime;
         uint256 lockPeriod;
         uint256 lastClaimTime;
+        uint256 totalStakeValue;
     }
     mapping(address => Stake) public stakingBalances;
     uint256 public totalStaked;
 
     event Staked(address indexed user, address token, uint256 amount, uint256 lockPeriod);
     event Unstaked(address indexed user, address token, uint256 amount);
-    event sTokensClaimed(address indexed user, uint256 amount);
-    event Redeemed(address indexed user, uint256 amount);
+    event sTokensClaimed(address indexed user, uint256 amount, uint256 reward);
+    event Redeemed(uint256 sTokenAmount, uint256 originalAmount, uint256 rewardAmount);
 
     function initialize(address _dddTokenAddress, address multisigAddress) public initializer {
         __ERC20_init("StakingToken", "sDDD");
@@ -57,8 +58,8 @@ contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGua
         totalStaked += amount;
 
         uint256 currentReward = calculateReward(amount, lockPeriod, block.timestamp, block.timestamp);
-        stakingBalances[msg.sender] = Stake(amount, block.timestamp, lockPeriod, block.timestamp);
-        _mint(msg.sender, amount + currentReward);  // Mint sTokens representing the staked amount + initial reward
+        stakingBalances[msg.sender] = Stake(amount, block.timestamp, lockPeriod, block.timestamp, amount + currentReward);
+        _mint(msg.sender, amount + currentReward);
 
         emit Staked(msg.sender, token, amount, lockPeriod);
     }
@@ -69,64 +70,41 @@ contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGua
 
         uint256 currentReward = calculateReward(userStake.originalAmount, userStake.lockPeriod, userStake.lastClaimTime, block.timestamp);
         userStake.lastClaimTime = block.timestamp;
+        userStake.totalStakeValue += currentReward;
 
-        _mint(msg.sender, currentReward);  // Mint additional sTokens representing new rewards
-        emit sTokensClaimed(msg.sender, currentReward);
+        _mint(msg.sender, currentReward);
+        emit sTokensClaimed(msg.sender, userStake.totalStakeValue, currentReward);
     }
 
     function unstake(address token, uint256 sTokenAmount) external nonReentrant {
+        require(sTokenAmount > 0, "Invalid sToken amount");
         Stake storage userStake = stakingBalances[msg.sender];
-        require(userStake.originalAmount > 0, "No tokens staked");
-        require(block.timestamp >= userStake.startTime + (userStake.lockPeriod * 30 days), "Stake is still locked");
-        
-        uint256 totalRewards = calculateReward(userStake.originalAmount, userStake.lockPeriod, userStake.lastClaimTime, block.timestamp);
-        uint256 totalStakeValue = userStake.originalAmount + totalRewards;
-        require(sTokenAmount <= totalStakeValue, "Insufficient sTokens");
+        require(userStake.totalStakeValue >= sTokenAmount, "Insufficient sTokens");
 
-        // Calculate the proportional original amount and rewards to withdraw
-        uint256 originalAmountToWithdraw = (userStake.originalAmount * sTokenAmount) / totalStakeValue;
-        uint256 rewardToWithdraw = (totalRewards * sTokenAmount) / totalStakeValue;
+        uint256 originalAmountToWithdraw = (userStake.originalAmount * sTokenAmount) / userStake.totalStakeValue;
+        uint256 rewardToWithdraw = sTokenAmount - originalAmountToWithdraw;
 
+        userStake.totalStakeValue -= sTokenAmount;
+        userStake.originalAmount -= originalAmountToWithdraw;
         totalStaked -= originalAmountToWithdraw;
 
-        _burn(msg.sender, sTokenAmount);  // Burn sTokens representing the unstaked amount
+        _burn(msg.sender, sTokenAmount);
         ERC20Upgradeable(token).transfer(msg.sender, originalAmountToWithdraw);
-        dddToken.mint(msg.sender, rewardToWithdraw);  // Mint DDD tokens representing the reward
-
-        if (totalStakeValue == sTokenAmount) {
-            delete stakingBalances[msg.sender];
-        } else {
-            userStake.originalAmount -= originalAmountToWithdraw;
-        }
+        dddToken.mint(msg.sender, rewardToWithdraw);
 
         emit Unstaked(msg.sender, token, originalAmountToWithdraw);
     }
 
-    function redeemForTokens(address user, uint256 sTokenAmount) external onlyRole(MANAGER_ROLE) nonReentrant {
-        require(balanceOf(user) >= sTokenAmount, "Insufficient sTokens");
-        Stake storage userStake = stakingBalances[user];
-        require(userStake.originalAmount > 0, "No tokens staked");
+    function redeemForTokens(uint256 sTokenAmount) external onlyRole(MANAGER_ROLE) nonReentrant {
+        require(sTokenAmount > 0, "Invalid sToken amount");
 
-        uint256 totalRewards = calculateReward(userStake.originalAmount, userStake.lockPeriod, userStake.lastClaimTime, block.timestamp);
-        uint256 totalStakeValue = userStake.originalAmount + totalRewards;
-        require(sTokenAmount <= totalStakeValue, "Insufficient sTokens");
+        // This assumes the contract itself holds an equivalent value of sTokens to the amount being redeemed
+        require(balanceOf(address(this)) >= sTokenAmount, "Insufficient sTokens in contract");
+        
+        _burn(address(this), sTokenAmount);
+        dddToken.mint(address(this), sTokenAmount);
 
-        // Calculate the proportional original amount and rewards to withdraw
-        uint256 originalAmountToWithdraw = (userStake.originalAmount * sTokenAmount) / totalStakeValue;
-        uint256 rewardToWithdraw = (totalRewards * sTokenAmount) / totalStakeValue;
-
-        totalStaked -= originalAmountToWithdraw;
-
-        _burn(user, sTokenAmount);  // Burn sTokens
-        dddToken.mint(user, rewardToWithdraw);  // Mint DDD tokens representing the reward
-
-        if (totalStakeValue == sTokenAmount) {
-            delete stakingBalances[user];
-        } else {
-            userStake.originalAmount -= originalAmountToWithdraw;
-        }
-
-        emit Redeemed(user, originalAmountToWithdraw);
+        emit Redeemed(sTokenAmount, 0, sTokenAmount);
     }
 
     function batchUnstake(address[] calldata users, address token, uint256[] calldata sTokenAmounts) external onlyRole(MANAGER_ROLE) nonReentrant {
@@ -135,35 +113,26 @@ contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGua
         for (uint i = 0; i < users.length; i++) {
             address user = users[i];
             uint256 sTokenAmount = sTokenAmounts[i];
-
             Stake storage userStake = stakingBalances[user];
-            if (userStake.originalAmount > 0 && block.timestamp >= userStake.startTime + (userStake.lockPeriod * 30 days)) {
-                uint256 totalRewards = calculateReward(userStake.originalAmount, userStake.lockPeriod, userStake.lastClaimTime, block.timestamp);
-                uint256 totalStakeValue = userStake.originalAmount + totalRewards;
-                require(sTokenAmount <= totalStakeValue, "Insufficient sTokens");
 
-                // Calculate the proportional original amount and rewards to withdraw
-                uint256 originalAmountToWithdraw = (userStake.originalAmount * sTokenAmount) / totalStakeValue;
-                uint256 rewardToWithdraw = (totalRewards * sTokenAmount) / totalStakeValue;
+            require(sTokenAmount > 0 && userStake.totalStakeValue >= sTokenAmount, "Invalid sToken amount or insufficient sTokens");
 
-                totalStaked -= originalAmountToWithdraw;
+            uint256 originalAmountToWithdraw = (userStake.originalAmount * sTokenAmount) / userStake.totalStakeValue;
+            uint256 rewardToWithdraw = sTokenAmount - originalAmountToWithdraw;
 
-                _burn(user, sTokenAmount);  // Burn sTokens
-                ERC20Upgradeable(token).transfer(user, originalAmountToWithdraw);
-                dddToken.mint(user, rewardToWithdraw);  // Mint DDD tokens representing the reward
+            userStake.totalStakeValue -= sTokenAmount;
+            userStake.originalAmount -= originalAmountToWithdraw;
+            totalStaked -= originalAmountToWithdraw;
 
-                if (totalStakeValue == sTokenAmount) {
-                    delete stakingBalances[user];
-                } else {
-                    userStake.originalAmount -= originalAmountToWithdraw;
-                }
+            _burn(user, sTokenAmount);
+            ERC20Upgradeable(token).transfer(user, originalAmountToWithdraw);
+            dddToken.mint(user, rewardToWithdraw);
 
-                emit Unstaked(user, token, originalAmountToWithdraw);
-            }
+            emit Unstaked(user, token, originalAmountToWithdraw);
         }
     }
 
-    function calculateReward(uint256 amount, uint256 lockPeriod, uint256 fromTime, uint256 toTime) internal pure returns (uint256) {
+    function calculateReward(uint256 amount, uint256 lockPeriod, uint256 fromTime, uint256 toTime) internal view returns (uint256) {
         uint256 rewardRate = getRewardRate(lockPeriod);
         uint256 timeStaked = toTime - fromTime;
         uint256 reward = (amount * rewardRate * timeStaked) / (365 days) / 100;
