@@ -13,9 +13,11 @@ contract LiquidStakingContract is ERC20Upgradeable, ReentrancyGuardUpgradeable, 
     ICustomToken public dddToken;
     mapping(address => bool) public whitelistedTokens;
     mapping(address => uint256) public stakingBalances;
-    
-    event Staked(address indexed user, address token, uint256 amount, uint256 totalBalance);
+    mapping(address => uint256) public rewardBalances;
+
+    event Staked(address indexed user, address token, uint256 amount);
     event Unstaked(address indexed user, address token, uint256 amount);
+    event RewardsDistributed(uint256 totalRewards);
 
     function initialize(address _dddTokenAddress) public initializer {
         __ERC20_init("StakingToken", "sDDD");
@@ -37,39 +39,48 @@ contract LiquidStakingContract is ERC20Upgradeable, ReentrancyGuardUpgradeable, 
         require(whitelistedTokens[token], "Token not whitelisted");
         require(amount > 0, "Cannot stake 0");
 
-        // Transfer tokens to this contract for staking
         ERC20Upgradeable(token).transferFrom(msg.sender, address(this), amount);
-
-        // Update staking balance
         stakingBalances[msg.sender] += amount;
 
-        // Mint sTokens to staker
+        // Mint sTokens to represent the staked amount
         _mint(msg.sender, amount);
 
-        emit Staked(msg.sender, token, amount, stakingBalances[msg.sender]);
+        emit Staked(msg.sender, token, amount);
     }
 
     function unstake(address token, uint256 amount) external nonReentrant {
         require(amount > 0, "Cannot unstake 0");
-        require(stakingBalances[msg.sender] >= amount, "Insufficient staking balance");
+        require(balanceOf(msg.sender) >= amount, "Insufficient balance");
 
-        // Update staking balance
         stakingBalances[msg.sender] -= amount;
+        rewardBalances[msg.sender] += calculateRewards(msg.sender);
 
-        // Burn sTokens
+        // Burn sTokens representing the unstaked amount
         _burn(msg.sender, amount);
 
-        // Return staked tokens to user
         ERC20Upgradeable(token).transfer(msg.sender, amount);
-
         emit Unstaked(msg.sender, token, amount);
     }
 
-    function distributeRewards(address[] calldata stakers, uint256[] calldata rewards) external onlyOwner {
-        require(stakers.length == rewards.length, "Stakers and rewards length mismatch");
+    function calculateRewards(address staker) internal returns (uint256) {
+        // Implement your reward calculation logic here
+        // This function should update `rewardBalances[staker]` and return the calculated reward
+        uint256 rewards = ...; // Calculated rewards
+        rewardBalances[staker] += rewards;
+        return rewards;
+    }
 
-        for (uint256 i = 0; i < stakers.length; i++) {
-            dddToken.mint(stakers[i], rewards[i]);
-        }
+    function claimRewards() external nonReentrant {
+        uint256 rewards = rewardBalances[msg.sender];
+        require(rewards > 0, "No rewards to claim");
+
+        dddToken.mint(msg.sender, rewards);
+        rewardBalances[msg.sender] = 0;
+    }
+
+    function distributeRewards() external onlyOwner {
+        // Implement the logic to distribute rewards to all stakers
+        // This might involve iterating over all stakers and calling `calculateRewards`
+        emit RewardsDistributed(...); // Total distributed rewards
     }
 }
