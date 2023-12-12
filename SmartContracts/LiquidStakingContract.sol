@@ -161,7 +161,7 @@ contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGua
         }
     }
 
-    function calculateReward(uint256 amount, uint256 lockPeriod, uint256 fromTime, uint256 toTime) internal view returns (uint256) {
+    function calculateReward(uint256 amount, uint256 lockPeriod, uint256 fromTime, uint256 toTime) internal pure returns (uint256) {
         uint256 rewardRate = getRewardRate(lockPeriod);
         uint256 timeStaked = toTime - fromTime;
         uint256 reward = (amount * rewardRate * timeStaked) / (365 days) / 100;
