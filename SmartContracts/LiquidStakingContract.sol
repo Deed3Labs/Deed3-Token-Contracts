@@ -13,6 +13,8 @@ interface ICustomToken {
 contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGuardUpgradeable, AccessControlUpgradeable {
     ICustomToken public dddToken;
     mapping(address => bool) public whitelistedTokens;
+    mapping(address => Stake) public stakingBalances;
+    address[] private stakers;
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
 
     struct Stake {
@@ -22,7 +24,7 @@ contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGua
         uint256 lastClaimTime;
         uint256 totalStakeValue;
     }
-    mapping(address => Stake) public stakingBalances;
+
     uint256 public totalStaked;
 
     event Staked(address indexed user, address token, uint256 amount, uint256 lockPeriod);
@@ -35,8 +37,8 @@ contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGua
         __ReentrancyGuard_init();
         __AccessControl_init();
 
-        _setupRole(DEFAULT_ADMIN_ROLE, multisigAddress);
-        _setupRole(MANAGER_ROLE, multisigAddress);
+        _grantRole(DEFAULT_ADMIN_ROLE, multisigAddress);
+        _grantRole(MANAGER_ROLE, multisigAddress);
 
         dddToken = ICustomToken(_dddTokenAddress);
     }
@@ -59,6 +61,7 @@ contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGua
 
         uint256 currentReward = calculateReward(amount, lockPeriod, block.timestamp, block.timestamp);
         stakingBalances[msg.sender] = Stake(amount, block.timestamp, lockPeriod, block.timestamp, amount + currentReward);
+        addStaker(msg.sender); // Add staker to the array
         _mint(msg.sender, amount + currentReward);
 
         emit Staked(msg.sender, token, amount, lockPeriod);
@@ -88,6 +91,10 @@ contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGua
         userStake.originalAmount -= originalAmountToWithdraw;
         totalStaked -= originalAmountToWithdraw;
 
+        if (userStake.totalStakeValue == 0) {
+            removeStaker(msg.sender); // Remove staker from the array
+        }
+
         _burn(msg.sender, sTokenAmount);
         ERC20Upgradeable(token).transfer(msg.sender, originalAmountToWithdraw);
         dddToken.mint(msg.sender, rewardToWithdraw);
@@ -100,7 +107,8 @@ contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGua
         require(totalStaked >= sTokenAmount, "Insufficient staked amount in contract");
 
         uint256 remainingSTokenAmount = sTokenAmount;
-        for (address staker in stakingBalances) {
+        for (uint i = 0; i < stakers.length; i++) {
+            address staker = stakers[i];
             if (remainingSTokenAmount == 0) break;
 
             Stake storage userStake = stakingBalances[staker];
@@ -110,11 +118,12 @@ contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGua
                 remainingSTokenAmount -= redeemableAmount;
 
                 uint256 rewardAmount = calculateReward(userStake.originalAmount, userStake.lockPeriod, userStake.lastClaimTime, block.timestamp);
-                dddToken.mint(msg.sender, rewardAmount);
+                dddToken.mint(staker, rewardAmount); // Mint rewards to the staker
 
                 if (userStake.totalStakeValue == 0) {
                     totalStaked -= userStake.originalAmount;
                     delete stakingBalances[staker];
+                    removeStaker(staker); // Remove staker from the array
                 }
             }
         }
@@ -140,6 +149,10 @@ contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGua
             userStake.originalAmount -= originalAmountToWithdraw;
             totalStaked -= originalAmountToWithdraw;
 
+            if (userStake.totalStakeValue == 0) {
+                removeStaker(user); // Remove staker from the array
+            }
+
             _burn(user, sTokenAmount);
             ERC20Upgradeable(token).transfer(user, originalAmountToWithdraw);
             dddToken.mint(user, rewardToWithdraw);
@@ -161,5 +174,23 @@ contract LiquidStakingContract is Initializable, ERC20Upgradeable, ReentrancyGua
         if (lockPeriod == 12) return 75;
         if (lockPeriod == 24) return 100;
         return 125;  // For 60 months
+    }
+
+    function addStaker(address staker) internal {
+        stakers.push(staker);
+    }
+
+    function removeStaker(address staker) internal {
+        for (uint i = 0; i < stakers.length; i++) {
+            if (stakers[i] == staker) {
+                stakers[i] = stakers[stakers.length - 1];
+                stakers.pop();
+                break;
+            }
+        }
+    }
+
+    function min(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a < b ? a : b;
     }
 }
