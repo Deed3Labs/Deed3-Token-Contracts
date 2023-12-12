@@ -19,11 +19,11 @@ contract TheDeed3EquityToken is ERC20Upgradeable, AccessControlUpgradeable {
         __ERC20_init("The Deed3 Equity Token", "DDD");
         __AccessControl_init();
 
-        // Set up the default admin role
-        _setupRole(DEFAULT_ADMIN_ROLE, multisigWalletAddress);
+        // Grant the default admin role to the multisig wallet
+        _grantRole(DEFAULT_ADMIN_ROLE, multisigWalletAddress);
 
         // Grant MINTER_ROLE to the multisig wallet initially
-        _setupRole(MINTER_ROLE, multisigWalletAddress);
+        _grantRole(MINTER_ROLE, multisigWalletAddress);
     }
 
     /**
@@ -49,3 +49,4 @@ contract TheDeed3EquityToken is ERC20Upgradeable, AccessControlUpgradeable {
     }
 
 }
+
