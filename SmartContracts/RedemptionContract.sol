@@ -30,8 +30,8 @@ contract RedemptionContract is Initializable, AccessControlUpgradeable, Reentran
         sToken = IERC20Upgradeable(_sToken);
         stakingContract = IStakingContract(_stakingContract);
 
-        _setupRole(DEFAULT_ADMIN_ROLE, multisigAddress);
-        _setupRole(MANAGER_ROLE, multisigAddress);
+        _grantRole(DEFAULT_ADMIN_ROLE, multisigAddress);
+        _grantRole(MANAGER_ROLE, multisigAddress);
     }
 
     function redeem(uint256 sTokenAmount) external nonReentrant {
