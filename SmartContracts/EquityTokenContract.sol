@@ -10,13 +10,14 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
  */
 contract TheDeed3EquityToken is ERC20Upgradeable, AccessControlUpgradeable {
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+    uint8 private constant DECIMALS = 18;
 
     /**
      * @dev Initializes the contract with token details and sets up roles.
      * @param multisigWalletAddress The address that will have the default admin role.
      */
     function initialize(address multisigWalletAddress) public initializer {
-        __ERC20_init("The Deed3 Equity Token", "DDD");
+        __ERC20_init("The Deed3 Equity Token (test #2)", "DDD");
         __AccessControl_init();
 
         // Grant the default admin role to the multisig wallet
@@ -27,15 +28,21 @@ contract TheDeed3EquityToken is ERC20Upgradeable, AccessControlUpgradeable {
     }
 
     /**
+     * @dev Returns the number of decimals used to get its user representation.
+     */
+    function decimals() public pure override returns (uint8) {
+        return DECIMALS;
+    }
+
+    /**
      * @dev Mints new tokens. Access restricted to addresses with the MINTER_ROLE.
      * @param to The address that will receive the minted tokens.
-     * @param amount The amount of tokens to mint.
+     * @param amount The amount of tokens to mint (in whole tokens).
      */
     function mint(address to, uint256 amount) public onlyRole(MINTER_ROLE) {
         require(to != address(0), "Mint to the zero address is not allowed");
-        require(amount > 0, "Mint amount must be greater than zero");
-
-        _mint(to, amount);
+        uint256 adjustedAmount = amount * (10 ** uint256(DECIMALS));
+        _mint(to, adjustedAmount);
     }
 
     /**
@@ -47,6 +54,4 @@ contract TheDeed3EquityToken is ERC20Upgradeable, AccessControlUpgradeable {
         require(role != DEFAULT_ADMIN_ROLE, "Cannot renounce the default admin role");
         super.renounceRole(role, account);
     }
-
 }
-
