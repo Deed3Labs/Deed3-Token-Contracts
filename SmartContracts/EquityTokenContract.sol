@@ -22,7 +22,7 @@ contract TheDeed3EquityToken is ERC20Upgradeable, AccessControlUpgradeable {
      * @param multisigWalletAddress The address that will have the default admin role.
      */
     function initialize(address multisigWalletAddress) public initializer {
-        __ERC20_init("The Deed3 Equity Token (test #2)", "DDD");
+        __ERC20_init("The Deed3 Equity Token", "DDD");
         __AccessControl_init();
 
         // Grant the default admin role to the multisig wallet
