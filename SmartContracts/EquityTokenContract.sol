@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
@@ -26,13 +26,13 @@ contract TheDeed3EquityToken is ERC20Upgradeable, AccessControlUpgradeable {
         __AccessControl_init();
 
         // Grant the default admin role to the multisig wallet
-        _setupRole(DEFAULT_ADMIN_ROLE, multisigWalletAddress);
+        _grantRole(DEFAULT_ADMIN_ROLE, multisigWalletAddress);
         
         // Grant MINTER_ROLE to the multisig wallet initially
-        _setupRole(MINTER_ROLE, multisigWalletAddress);
+        _grantRole(MINTER_ROLE, multisigWalletAddress);
         
         // Grant RECOVERY_ROLE to the multisig wallet initially
-        _setupRole(RECOVERY_ROLE, multisigWalletAddress);
+        _grantRole(RECOVERY_ROLE, multisigWalletAddress);
 
         // Lock transfers for all token holders by default
         _defaultTransferLock = true;
