@@ -48,12 +48,11 @@ contract TheDeed3EquityToken is ERC20Upgradeable, AccessControlUpgradeable {
     /**
      * @dev Mints new tokens. Access restricted to addresses with the MINTER_ROLE.
      * @param to The address that will receive the minted tokens.
-     * @param amount The amount of tokens to mint (in whole tokens).
+     * @param amount The amount of tokens to mint (in wei).
      */
     function mint(address to, uint256 amount) public onlyRole(MINTER_ROLE) {
         require(to != address(0), "Mint to the zero address is not allowed");
-        uint256 adjustedAmount = amount * (10 ** uint256(DECIMALS));
-        _mint(to, adjustedAmount);
+        _mint(to, amount);
     }
     
     /**
