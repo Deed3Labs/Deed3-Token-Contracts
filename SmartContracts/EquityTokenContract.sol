@@ -9,8 +9,8 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
  * @dev Implements an upgradable ERC20 token with role-based access control.
  */
 contract TheDeed3EquityToken is ERC20Upgradeable, AccessControlUpgradeable {
-    bytes32 public MINTER_ROLE;
-    bytes32 public RECOVERY_ROLE;
+    bytes32 public constant MINTER_ROLE = keccak256(abi.encodePacked("MINTER_ROLE"));
+    bytes32 public constant RECOVERY_ROLE = keccak256(abi.encodePacked("RECOVERY_ROLE")); // New role for recovery purposes
     uint8 private constant DECIMALS = 18;
     
     // Mapping to track locked transfers
@@ -24,9 +24,6 @@ contract TheDeed3EquityToken is ERC20Upgradeable, AccessControlUpgradeable {
     function initialize(address multisigWalletAddress) public initializer {
         __ERC20_init("The Deed3 Equity Token", "DDD");
         __AccessControl_init();
-
-        MINTER_ROLE = keccak256(abi.encodePacked("MINTER_ROLE"));
-        RECOVERY_ROLE = keccak256(abi.encodePacked("RECOVERY_ROLE"));
 
         // Grant the default admin role to the multisig wallet
         _grantRole(DEFAULT_ADMIN_ROLE, multisigWalletAddress);
@@ -99,5 +96,15 @@ contract TheDeed3EquityToken is ERC20Upgradeable, AccessControlUpgradeable {
     function renounceRole(bytes32 role, address account) public override {
         require(role != DEFAULT_ADMIN_ROLE, "Cannot renounce the default admin role");
         super.renounceRole(role, account);
+    }
+    
+    /**
+     * @dev Grants a role to an address using a human-readable role name.
+     * @param roleName The human-readable name of the role.
+     * @param account The address to which the role will be granted.
+     */
+    function grantRoleByName(string memory roleName, address account) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        bytes32 role = keccak256(abi.encodePacked(roleName));
+        grantRole(role, account);
     }
 }
