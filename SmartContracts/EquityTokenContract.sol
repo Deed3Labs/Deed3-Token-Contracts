@@ -9,8 +9,8 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
  * @dev Implements an upgradable ERC20 token with role-based access control.
  */
 contract TheDeed3EquityToken is ERC20Upgradeable, AccessControlUpgradeable {
-    bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
-    bytes32 public constant RECOVERY_ROLE = keccak256("RECOVERY_ROLE"); // New role for recovery purposes
+    bytes32 public MINTER_ROLE;
+    bytes32 public RECOVERY_ROLE;
     uint8 private constant DECIMALS = 18;
     
     // Mapping to track locked transfers
@@ -24,6 +24,9 @@ contract TheDeed3EquityToken is ERC20Upgradeable, AccessControlUpgradeable {
     function initialize(address multisigWalletAddress) public initializer {
         __ERC20_init("The Deed3 Equity Token", "DDD");
         __AccessControl_init();
+
+        MINTER_ROLE = keccak256(abi.encodePacked("MINTER_ROLE"));
+        RECOVERY_ROLE = keccak256(abi.encodePacked("RECOVERY_ROLE"));
 
         // Grant the default admin role to the multisig wallet
         _grantRole(DEFAULT_ADMIN_ROLE, multisigWalletAddress);
