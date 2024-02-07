@@ -3,6 +3,9 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+
+/**
 
 /**
  * @title The Deed3 Equity Token (DDD)
@@ -11,11 +14,17 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 contract TheDeed3EquityToken is ERC20Upgradeable, AccessControlUpgradeable {
     bytes32 public constant MINTER_ROLE = keccak256(abi.encodePacked("MINTER_ROLE"));
     bytes32 public constant RECOVERY_ROLE = keccak256(abi.encodePacked("RECOVERY_ROLE")); // New role for recovery purposes
+    bytes32 public constant WHITELIST_ROLE = keccak256(abi.encodePacked("WHITELIST_ROLE")); // Role for whitelisting addresses
     uint8 private constant DECIMALS = 18;
     
     // Mapping to track locked transfers
     mapping(address => bool) private _lockedTransfers;
     bool private _defaultTransferLock; // Flag to lock/unlock transfers for all token holders by default
+
+    // Mapping to keep track of whitelisted addresses
+    mapping(address => bool) private _whitelist;
+
+    event WhitelistUpdated(address indexed account, bool status);
 
     /**
      * @dev Initializes the contract with token details and sets up roles.
@@ -33,6 +42,9 @@ contract TheDeed3EquityToken is ERC20Upgradeable, AccessControlUpgradeable {
         
         // Grant RECOVERY_ROLE to the multisig wallet initially
         _grantRole(RECOVERY_ROLE, multisigWalletAddress);
+
+        // Grant WHITELIST_ROLE to the multisig wallet initially
+        _grantRole(WHITELIST_ROLE, multisigWalletAddress); // Initialize the WHITELIST_ROLE
 
         // Lock transfers for all token holders by default
         _defaultTransferLock = true;
@@ -107,4 +119,48 @@ contract TheDeed3EquityToken is ERC20Upgradeable, AccessControlUpgradeable {
         bytes32 role = keccak256(abi.encodePacked(roleName));
         grantRole(role, account);
     }
+    
+    /**
+     * @dev Adds an address to the transfer whitelist. Access restricted to addresses with the WHITELIST_ROLE.
+     * @param to The address to be added to the whitelist.
+     */
+    function addToWhitelist(address to) public onlyRole(WHITELIST_ROLE) {
+        require(to != address(0), "Cannot add zero address to whitelist");
+        _whitelist[to] = true;
+    }
+
+    /**
+     * @dev Removes an address from the transfer whitelist. Access restricted to addresses with the WHITELIST_ROLE.
+     * @param to The address to be removed from the whitelist.
+     */
+    function removeFromWhitelist(address to) public onlyRole(WHITELIST_ROLE) {
+        _whitelist[to] = false;
+    }
+
+    /**
+     * @dev Checks if an address is whitelisted for transfers.
+     * @param to The address to check.
+     * @return True if the address is whitelisted, false otherwise.
+     */
+    function isWhitelisted(address to) public view returns (bool) {
+        return _whitelist[to];
+    }
+
+    // Override the _update method to include custom pre-transfer checks
+    function _update(address from, address to, uint256 value) internal virtual override {
+        _beforeTokenOperation(from, to, value); // Custom pre-operation hook
+        super._update(from, to, value);
+    }
+
+    // Custom pre-operation hook
+    function _beforeTokenOperation(address from, address to, uint256 value) internal view {
+        if (from == address(0)) {
+            // Minting operation, no need for locked transfer or whitelist check
+            return;
+        }
+
+        // Check if default transfer lock is active and neither the sender is unlocked nor the recipient is whitelisted
+        require(!_defaultTransferLock || _whitelist[to] || !_lockedTransfers[from], "Transfers are locked by default, sender is locked, or recipient not whitelisted");
+    }
+
 }
